@@ -1,0 +1,36 @@
+﻿{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "storageAccountName": {
+      "value": "mysqlwordpress123"
+    },
+    "adminUsername": {
+      "value": "wpadmin"
+    },
+    "dnsName": {
+      "value": "mysqlwordpress123"
+    },
+    "adminPassword": {
+      "value": "pass@word1"
+    },
+    "dbVmCount": {
+      "value": 3
+    },
+    "webVmCount": {
+      "value": 3
+    },
+    "WebVMSetupScriptFileName": {
+      "value": "installwebvm.sh"
+    },
+    "DbVMSetupScriptFileName": {
+      "value": "installdbvm.sh"
+    },
+    "ubuntuOSVersion": {
+      "value": "14.04.2-LTS"
+    },
+    "location": {
+      "value": "northeurope"
+    }
+  }
+}
