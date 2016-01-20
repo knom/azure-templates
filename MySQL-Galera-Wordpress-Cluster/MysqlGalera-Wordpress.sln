@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
 VisualStudioVersion = 14.0.23107.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{151D2E53-A2C4-4D7D-83FE-D05416EBD58E}") = "MysqlGalera-Wordpress", "MysqlGalera-Wordpress\MysqlGalera-Wordpress.deployproj", "{7E01F0A1-2C99-48CF-95E0-3FD2F4296C97}"
+Project("{151D2E53-A2C4-4D7D-83FE-D05416EBD58E}") = "MysqlGalera-Wordpress", "vs-template\MysqlGalera-Wordpress.deployproj", "{7E01F0A1-2C99-48CF-95E0-3FD2F4296C97}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

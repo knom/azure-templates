@@ -60,7 +60,7 @@
     },
     "location": {
       "type": "string",
-      "defaultValue": "westeurope"
+      "defaultValue": "northeurope"
     },
     "WebVMSetupScriptFileName": {
       "type": "string",
@@ -76,7 +76,7 @@
     }
   },
   "variables": {
-    "location": "[parameters('location')]", 
+    "location": "[parameters('location')]", // OR resourceGroup().location
     "storage": {
       "accountType": "Standard_LRS",
       "containerName": "vhds"
@@ -136,6 +136,31 @@
         "accountType": "[variables('storage').accountType]"
       }
     },
+    //{
+    //  "apiVersion": "2015-06-15",
+    //  "type": "Microsoft.Network/networkSecurityGroups",
+    //  "name": "nsg_websubnet",
+    //  "tags": {"displayName": "NSG - Web Subnet"},
+    //  "location": "[variables('location')]",
+    //  "properties": {
+    //    "securityRules": [
+    //      {
+    //        "name": "HTTP",
+    //        "properties": {
+    //          "description": "Allow HTTP",
+    //          "protocol": "TCP",
+    //          "sourcePortRange": "*",
+    //          "destinationPortRange": "80,443",
+    //          "access": "Allow",
+    //          "priority": 100,
+    //          "direction": "Inbound",
+    //          "sourceAddressPrefix": "AZURE_LOADBALANCER",
+    //          "destinationAddressPrefix": "10.0.3.0/24"
+    //        }
+    //      }
+    //    ]
+    //  }
+    //},
     {
       "apiVersion": "2015-06-15",
       "type": "Microsoft.Network/virtualNetworks",
@@ -161,6 +186,9 @@
             "name": "[variables('databaseTier').subnetName]",
             "properties": {
               "addressPrefix": "10.0.3.0/24"
+              //"networkSecurityGroup": {
+              //  "id": "[resourceId()]"
+              //}
             }
           },
           {
