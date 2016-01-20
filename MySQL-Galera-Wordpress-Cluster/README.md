@@ -1,4 +1,4 @@
-# [MySQL + Wordpress Clustered in VMs] (./MySQL-Galera-Wordpress-Cluster/)
+# MySQL + Wordpress Clustered in VMs
 * MariaDB/Mysql clustered using Galera
 * Nginx
 * Wordpress
