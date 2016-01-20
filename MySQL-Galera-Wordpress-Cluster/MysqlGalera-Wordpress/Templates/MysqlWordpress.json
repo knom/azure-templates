@@ -1,0 +1,576 @@
+﻿{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "_artifactsLocation": {
+      "type": "string"
+    },
+    "_artifactsLocationSasToken": {
+      "type": "securestring"
+    },
+    "dbVmCount": {
+      "type": "int",
+      "defaultValue": "3",
+      "metadata": {
+        "description": "The amount of machines to create on the db tier"
+      }
+    },
+    "webVmCount": {
+      "type": "int",
+      "defaultValue": "3",
+      "metadata": {
+        "description": "The amount of machines to create on the web tier"
+      }
+    },
+    "storageAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Unique DNS Name for the Storage Account where the Virtual Machine's disks will be placed."
+      }
+    },
+    "adminUsername": {
+      "type": "string",
+      "metadata": {
+        "description": "User name for the Virtual Machine."
+      }
+    },
+    "adminPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Password for the Virtual Machine."
+      }
+    },
+    "dnsName": {
+      "type": "string",
+      "metadata": {
+        "description": "Unique DNS Name for the Public IP used to access the Virtual Machine."
+      }
+    },
+    "ubuntuOSVersion": {
+      "type": "string",
+      "defaultValue": "14.04.2-LTS",
+      "allowedValues": [
+        "12.04.5-LTS",
+        "14.04.2-LTS",
+        "15.04"
+      ],
+      "metadata": {
+        "description": "The Ubuntu version for the VM. This will pick a fully patched image of this given Ubuntu version. Allowed values: 12.04.2-LTS, 12.04.3-LTS, 12.04.4-LTS, 12.04.5-LTS, 12.10, 14.04.2-LTS, 14.10, 15.04."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "northeurope"
+    },
+    "WebVMSetupScriptFileName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the script file"
+      }
+    },
+    "DbVMSetupScriptFileName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the script file"
+      }
+    }
+  },
+  "variables": {
+    "location": "[parameters('location')]", // OR resourceGroup().location
+    "storage": {
+      "accountType": "Standard_LRS",
+      "containerName": "vhds"
+    },
+
+    "databaseTier": {
+      "size": "Standard_D1",
+      "subnetName": "DB",
+      "loadBalancerName": "nlb_db",
+      "vmNicName": "nic_db",
+      "vmName": "db",
+      "availabilitySetName": "as_db",
+      "dbName": "wordpress",
+      "dbUser": "wpuser",
+      "dbPassword": "pass@word1",
+      "loadBalancerIP": "10.0.2.4",
+      "dbMaintPassword": "ASD30qtTzjycYlOr",
+      "dbClusterName": "Mysql-Cluster"
+    },
+
+    "webTier": {
+      "size": "Standard_D1",
+      "subnetName": "Web",
+      "loadBalancerName": "nlb_web",
+      "vmNicName": "nic_web",
+      "vmName": "web",
+      "availabilitySetName": "as_web"
+    },
+
+    "virtualNetwork": {
+      "name": "VNET"
+    },
+
+    "publicIPAddressType": "Dynamic",
+    "PublicIP1Name": "PublicIP",
+
+    "vnetID": "[resourceId('Microsoft.Network/virtualNetworks',variables('virtualNetwork').name)]",
+    "dbSubnetRef": "[concat(variables('vnetID'),'/subnets/',variables('databaseTier').subnetName)]",
+    "webSubnetRef": "[concat(variables('vnetID'),'/subnets/',variables('webTier').subnetName)]",
+
+    "imagePublisher": "Canonical",
+    "imageOffer": "UbuntuServer",
+    "OSDiskName": "ubuntu-os.vhd",
+
+    "scriptFolder": "[concat(resourceGroup().name, '-stageartifacts')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[parameters('storageAccountName')]",
+      "apiVersion": "2015-05-01-preview",
+      "location": "[variables('location')]",
+      "tags": {
+        "displayName": "Storage Account"
+      },
+      "properties": {
+        "accountType": "[variables('storage').accountType]"
+      }
+    },
+    //{
+    //  "apiVersion": "2015-06-15",
+    //  "type": "Microsoft.Network/networkSecurityGroups",
+    //  "name": "nsg_websubnet",
+    //  "tags": {"displayName": "NSG - Web Subnet"},
+    //  "location": "[variables('location')]",
+    //  "properties": {
+    //    "securityRules": [
+    //      {
+    //        "name": "HTTP",
+    //        "properties": {
+    //          "description": "Allow HTTP",
+    //          "protocol": "TCP",
+    //          "sourcePortRange": "*",
+    //          "destinationPortRange": "80,443",
+    //          "access": "Allow",
+    //          "priority": 100,
+    //          "direction": "Inbound",
+    //          "sourceAddressPrefix": "AZURE_LOADBALANCER",
+    //          "destinationAddressPrefix": "10.0.3.0/24"
+    //        }
+    //      }
+    //    ]
+    //  }
+    //},
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Network/virtualNetworks",
+      "name": "[variables('virtualNetwork').name]",
+      "location": "[variables('location')]",
+      "tags": {
+        "displayName": "Virtual Network"
+      },
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "10.0.0.0/16"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('webTier').subnetName]",
+            "properties": {
+              "addressPrefix": "10.0.2.0/24"
+            }
+          },
+          {
+            "name": "[variables('databaseTier').subnetName]",
+            "properties": {
+              "addressPrefix": "10.0.3.0/24"
+              //"networkSecurityGroup": {
+              //  "id": "[resourceId()]"
+              //}
+            }
+          },
+          {
+            "name": "Management",
+            "properties": {
+              "addressPrefix": "10.0.1.0/24"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[variables('PublicIP1Name')]",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "location": "[variables('location')]",
+      "apiVersion": "2015-05-01-preview",
+      "dependsOn": [ ],
+      "tags": {
+        "displayName": "Public IP"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic",
+        "dnsSettings": {
+          "domainNameLabel": "[parameters('dnsName')]"
+        }
+      }
+    },
+    {
+      "apiVersion": "2015-05-01-preview",
+      "type": "Microsoft.Network/networkInterfaces",
+      "name": "[concat(variables('databaseTier').vmNicName,copyindex(1))]",
+      "tags": { "displayName": "DB VM NIC" },
+      "location": "[variables('location')]",
+      "copy": {
+        "count": "[parameters('dbVmCount')]",
+        "name": "[concat(variables('databaseTier').vmNicName,'_loop')]"
+      },
+      "dependsOn": [
+        "[concat('Microsoft.Network/virtualNetworks/', variables('virtualNetwork').name)]",
+        "[concat('Microsoft.Network/loadBalancers/',variables('databaseTier').loadBalancerName)]"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('dbSubnetRef')]"
+              },
+              "loadBalancerBackendAddressPools": [
+                {
+                  "id": "[concat(resourceId('Microsoft.Network/loadBalancers',variables('databaseTier').loadBalancerName),'/backendAddressPools/dbLoadBalancerBackEnd')]"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Compute/availabilitySets",
+      "name": "[variables('databaseTier').availabilitySetName]",
+      "apiVersion": "2015-05-01-preview",
+      "location": "[resourceGroup().location]",
+      "tags": { "displayName": "DB VM Availability Set" },
+      "properties": { }
+    },
+    {
+      "apiVersion": "2015-05-01-preview",
+      "name": "[variables('databaseTier').loadBalancerName]",
+      "tags": { "displayName": "DB VM LoadBalancer" },
+      "type": "Microsoft.Network/loadBalancers",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Network/virtualNetworks/', variables('virtualNetwork').name)]"
+      ],
+      "properties": {
+        "frontendIPConfigurations": [
+          {
+            "name": "loadBalancerFrontEnd",
+            "properties": {
+              "subnet": {
+                "id": "[variables('webSubnetRef')]"
+              },
+              "privateIPAllocationMethod": "Static",
+              "privateIPAddress": "[variables('databaseTier').loadBalancerIP]"
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "dbLoadBalancerBackEnd"
+          }
+        ],
+        "loadBalancingRules": [
+          {
+            "Name": "MySQL",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('databaseTier').loadBalancerName), '/frontendIpConfigurations/loadBalancerFrontEnd')]"
+              },
+              "backendAddressPool": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('databaseTier').loadBalancerName), '/backendAddressPools/dbLoadBalancerBackEnd')]"
+              },
+              "probe": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('databaseTier').loadBalancerName), '/probes/MySQLProbe')]"
+              },
+              "protocol": "Tcp",
+              "frontendPort": 3306,
+              "backendPort": 3306,
+              "idleTimeoutInMinutes": 15
+            }
+          }
+        ],
+        "probes": [
+          {
+            "properties": {
+              "protocol": "Tcp",
+              "port": 3306,
+              "intervalInSeconds": 15,
+              "numberOfProbes": 2
+            },
+            "name": "MySQLProbe"
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2015-06-15",
+      "name": "[concat(variables('databaseTier').vmName,copyindex(1))]",
+      "location": "[variables('location')]",
+      "copy": {
+        "count": "[parameters('dbVmCount')]",
+        "name": "[concat(variables('databaseTier').vmName,'_loop')]"
+      },
+      "dependsOn": [
+        "[concat('Microsoft.Storage/storageAccounts/', parameters('storageAccountName'))]",
+        "[concat('Microsoft.Network/networkInterfaces/', variables('databaseTier').vmNicName,copyindex(1))]",
+        "[concat('Microsoft.Compute/availabilitySets/', variables('databaseTier').availabilitySetName)]"
+      ],
+      "tags": {
+        "displayName": "DB VM"
+      },
+      "properties": {
+        "availabilitySet": {
+          "id": "[resourceId('Microsoft.Compute/availabilitySets',variables('databaseTier').availabilitySetName)]"
+        },
+        "hardwareProfile": {
+          "vmSize": "[variables('databaseTier').size]"
+        },
+        "osProfile": {
+          "computerName": "[concat(variables('databaseTier').vmName,copyindex(1))]",
+          "adminUsername": "[parameters('AdminUsername')]",
+          "adminPassword": "[parameters('AdminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[variables('imagePublisher')]",
+            "offer": "[variables('imageOffer')]",
+            "sku": "[parameters('UbuntuOSVersion')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "VMOSDisk",
+            "vhd": {
+              "uri": "[concat('http://', parameters('storageAccountName'), '.blob.core.windows.net/', variables('storage').containerName, '/', variables('OSDiskName'), '_',copyindex(1),'.vhd')]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('databaseTier').vmNicName, copyindex(1)))]"
+            }
+          ]
+        }
+      },
+      "resources": [
+        {
+          "name": "DbVMSetup",
+          "type": "extensions",
+          "location": "[variables('location')]",
+          "apiVersion": "2015-06-15",
+          "dependsOn": [
+            "[concat('Microsoft.Compute/virtualMachines/', concat(variables('databaseTier').vmName,copyindex(1)))]"
+          ],
+          "tags": {
+            "displayName": "DbVMSetup"
+          },
+          "properties": {
+            "publisher": "Microsoft.OSTCExtensions",
+            "type": "CustomScriptForLinux",
+            "typeHandlerVersion": "1.2",
+            "autoUpgradeMinorVersion": true,
+            "settings": {
+              "fileUris": [
+                "[concat(parameters('_artifactsLocation'), '/', parameters('DbVMSetupScriptFileName'), parameters('_artifactsLocationSasToken'))]"
+              ],
+              "commandToExecute": "[concat('bash ', parameters('DbVMSetupScriptFileName'), ' ', variables('databaseTier').dbName, ' ', variables('databaseTier').dbUser, ' ', variables('databaseTier').dbPassword, ' ', variables('databaseTier').dbMaintPassword, ' ', variables('databaseTier').vmName, ' ', variables('databaseTier').dbClusterName, ' ', parameters('dbVmCount'))]"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "apiVersion": "2015-05-01-preview",
+      "type": "Microsoft.Network/networkInterfaces",
+      "name": "[concat(variables('webTier').vmNicName,copyindex(1))]",
+      "tags": { "displayName": "Web VM NIC" },
+      "location": "[variables('location')]",
+      "copy": {
+        "count": "[parameters('webVmCount')]",
+        "name": "[concat(variables('webTier').vmNicName,'_loop')]"
+      },
+      "dependsOn": [
+        "[concat('Microsoft.Network/virtualNetworks/', variables('virtualNetwork').name)]",
+        "[concat('Microsoft.Network/loadBalancers/',variables('webTier').loadBalancerName)]"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('webSubnetRef')]"
+              },
+              "loadBalancerBackendAddressPools": [
+                {
+                  "id": "[concat(resourceId('Microsoft.Network/loadBalancers',variables('webTier').loadBalancerName),'/backendAddressPools/loadBalancerBackEnd')]"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Compute/availabilitySets",
+      "name": "[variables('webTier').availabilitySetName]",
+      "apiVersion": "2015-05-01-preview",
+      "location": "[variables('location')]",
+      "tags": { "displayName": "Web VM Availability Set" },
+      "properties": { }
+    },
+    {
+      "apiVersion": "2015-05-01-preview",
+      "name": "[variables('webTier').loadBalancerName]",
+      "tags": { "displayName": "Web VM LoadBalancer" },
+      "type": "Microsoft.Network/loadBalancers",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Network/virtualNetworks/', variables('virtualNetwork').name)]"
+      ],
+      "properties": {
+        "frontendIPConfigurations": [
+          {
+            "name": "loadBalancerFrontEnd",
+            "properties": {
+              "publicIPAddress": { "id": "[resourceId('Microsoft.Network/publicIPAddresses',variables('PublicIP1Name'))]" }
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "loadBalancerBackEnd"
+          }
+        ],
+        "loadBalancingRules": [
+          {
+            "Name": "HTTP",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('webTier').loadBalancerName), '/frontendIpConfigurations/loadBalancerFrontEnd')]"
+              },
+              "backendAddressPool": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('webTier').loadBalancerName), '/backendAddressPools/loadBalancerBackEnd')]"
+              },
+              "probe": {
+                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('webTier').loadBalancerName), '/probes/HttpProbe')]"
+              },
+              "protocol": "Tcp",
+              "frontendPort": 80,
+              "backendPort": 80,
+              "idleTimeoutInMinutes": 15
+            }
+          }
+        ],
+        "probes": [
+          {
+            "properties": {
+              "protocol": "Tcp",
+              "port": 80,
+              "intervalInSeconds": 15,
+              "numberOfProbes": 2
+            },
+            "name": "HttpProbe"
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2015-06-15",
+      "name": "[concat(variables('webTier').vmName,copyindex(1))]",
+      "location": "[variables('location')]",
+      "copy": {
+        "count": "[parameters('webVmCount')]",
+        "name": "[concat(variables('webTier').vmName,'_loop')]"
+      },
+      "dependsOn": [
+        "[concat('Microsoft.Storage/storageAccounts/', parameters('storageAccountName'))]",
+        "[concat('Microsoft.Network/networkInterfaces/', variables('webTier').vmNicName,copyindex(1))]",
+        "[concat('Microsoft.Compute/availabilitySets/', variables('webTier').availabilitySetName)]"
+      ],
+      "tags": {
+        "displayName": "Web VM"
+      },
+      "properties": {
+        "availabilitySet": { "id": "[resourceId('Microsoft.Compute/availabilitySets',variables('webTier').availabilitySetName)]" },
+        "hardwareProfile": {
+          "vmSize": "[variables('webTier').size]"
+        },
+        "osProfile": {
+          "computerName": "[concat(variables('webTier').vmName,copyindex(1))]",
+          "adminUsername": "[parameters('AdminUsername')]",
+          "adminPassword": "[parameters('AdminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[variables('imagePublisher')]",
+            "offer": "[variables('imageOffer')]",
+            "sku": "[parameters('UbuntuOSVersion')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "VMOSDisk",
+            "vhd": {
+              "uri": "[concat('http://', parameters('storageAccountName'), '.blob.core.windows.net/', variables('storage').containerName, '/', variables('OSDiskName'), '_',variables('webTier').vmName,'_',copyindex(1),'.vhd')]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', concat(variables('webTier').vmNicName, copyindex(1)))]"
+            }
+          ]
+        }
+      },
+      "resources": [
+        {
+          "name": "WebVMSetup",
+          "type": "extensions",
+          "location": "[variables('location')]",
+          "apiVersion": "2015-06-15",
+          "dependsOn": [
+            "[concat('Microsoft.Compute/virtualMachines/', concat(variables('webTier').vmName,copyindex(1)))]"
+          ],
+          "tags": {
+            "displayName": "WebVMSetup"
+          },
+          "properties": {
+            "publisher": "Microsoft.OSTCExtensions",
+            "type": "CustomScriptForLinux",
+            "typeHandlerVersion": "1.2",
+            "autoUpgradeMinorVersion": true,
+            "settings": {
+              "fileUris": [
+                "[concat(parameters('_artifactsLocation'), '/', parameters('WebVMSetupScriptFileName'), parameters('_artifactsLocationSasToken'))]"
+              ],
+              "commandToExecute": "[concat('bash ', parameters('WebVMSetupScriptFileName'), ' ', variables('databaseTier').dbName, ' ', variables('databaseTier').dbUser, ' ', variables('databaseTier').dbPassword, ' ', variables('databaseTier').loadBalancerIP)]"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
